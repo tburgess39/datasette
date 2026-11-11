@@ -338,6 +338,42 @@ async def test_external_atomic_replace_by_rename(tmp_path, db_path):
 
 
 @pytest.mark.asyncio
+async def test_crossdb_follows_symlink_repointed_to_new_file(tmp_path):
+    # A served path that is a symlink to the latest release file. When the
+    # symlink is re-pointed, --crossdb _memory connections must stop reading
+    # the old file they ATTACHed, as the database's own connections do
+    releases = tmp_path / "releases"
+    releases.mkdir()
+    v1 = str(releases / "v1.db")
+    v2 = str(releases / "v2.db")
+    make_db(v1)
+    make_db(v2, "create table t (id integer primary key, a text, v2 text)")
+    served = str(tmp_path / "ext.db")
+    os.symlink(v1, served)
+    ds = await start_ds([served], crossdb=True)
+    memory = ds.get_database("_memory")
+    # Warm a pooled crossdb connection with the old file attached
+    assert (await memory.execute("select a from ext.t")).first()[0] == "one"
+    v1_conn = sqlite3.connect(v1)
+    v1_conn.execute("update t set a = 'v1'")
+    v1_conn.commit()
+    v1_conn.close()
+    tmp_link = str(tmp_path / "ext.db.tmp")
+    os.symlink(v2, tmp_link)
+    os.replace(tmp_link, served)
+
+    async def replaced():
+        return await catalog_columns(ds, "ext", "t") == ["id", "a", "v2"]
+
+    await wait_for(replaced)
+    assert (await ds.get_database("ext").execute("select a from t")).first()[0] == (
+        "one"
+    )
+    assert (await memory.execute("select a from ext.t")).first()[0] == "one"
+    ds.close()
+
+
+@pytest.mark.asyncio
 async def test_old_inode_connections_without_watcher(tmp_path, db_path):
     # Documents the hazard the watcher fixes: with polling off, a cached
     # read connection keeps reading the replaced (unlinked) file

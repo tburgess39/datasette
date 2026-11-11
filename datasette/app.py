@@ -1039,7 +1039,8 @@ class Datasette:
     def _crossdb_attachments_changed(self, db):
         # --crossdb: each pooled _memory connection ATTACHed the databases
         # that existed when it was opened. Discard them so the next query
-        # sees databases added since, and none removed since
+        # sees databases added since, none removed since, and the current
+        # file behind any database whose file was replaced
         if not self.crossdb or db.is_memory:
             return
         memory = self.databases.get("_memory")

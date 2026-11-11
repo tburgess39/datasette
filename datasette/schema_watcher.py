@@ -720,6 +720,8 @@ class SchemaWatcher:
                 self.counters["replaced"] += 1
                 state.missing = False
                 state.db._invalidate_connections()
+                # --crossdb _memory connections ATTACHed the old file too
+                self.ds._crossdb_attachments_changed(state.db)
                 state.needs_scan = True
             elif kind == "busy":
                 self.counters["busy"] += 1
